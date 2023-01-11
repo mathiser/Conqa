@@ -1,0 +1,14 @@
+,structure,diagnostics_Mask-original_VolumeNum,volume_no_check,allowed_sub_volumes,z_top,z_bottom,adjacency_check_top,adjacency_check_bottom
+0,brain,1,True,1.0,134,88,,
+1,brainstem,1,True,1.0,104,88,,True
+2,esophagus,1,True,1.0,51,25,False,
+3,mandible,1,True,1.0,94,66,,
+4,parotid_l,1,True,1.0,91,73,,
+5,parotid_r,1,True,1.0,88,75,,
+6,pcm_low,1,True,1.0,60,51,True,False
+7,pcm_mid,1,True,1.0,72,61,True,True
+8,pcm_up,1,True,1.0,85,73,,True
+9,spinalcord,1,True,1.0,87,0,True,
+10,submandibular_l,1,True,1.0,75,66,,
+11,submandibular_r,1,True,1.0,76,65,,
+12,thyroid,2,True,2.0,54,37,,
