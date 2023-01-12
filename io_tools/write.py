@@ -1,17 +1,10 @@
 import logging
 import os
 from queue import Queue
-from typing import List
 
 import pandas as pd
-import monai.deploy.core as md
-from monai.deploy.core import ExecutionContext, InputContext, IOType, Operator, OutputContext, DataPath
 
-@md.input("omics", pd.DataFrame, IOType.IN_MEMORY)
-@md.input("reports", List[pd.DataFrame], IOType.IN_MEMORY)
-@md.output("", DataPath, IOType.DISK)
-@md.env(pip_packages=[])
-class ResultWriter(Operator):
+class ResultWriter:
     def __init__(self, reports_queue: Queue):
         self.logger = logging.getLogger("{}.{}".format(__name__, type(self).__name__))
         super().__init__()

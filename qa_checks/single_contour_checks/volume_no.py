@@ -1,21 +1,6 @@
 import logging
-from queue import Queue
-from typing import List
 
-import monai.deploy.core as md
-import numpy as np
-import pandas as pd
-import radiomics
-from monai.deploy.core import ExecutionContext, InputContext, IOType, Operator, OutputContext
-
-logger = radiomics.logger
-logger.setLevel(logging.ERROR)  # set level to DEBUG to include debug log messages in log file
-
-
-@md.input("omics", pd.DataFrame, IOType.IN_MEMORY)
-@md.output("reports", List[pd.DataFrame], IOType.IN_MEMORY)
-@md.env(pip_packages=[])
-class VolumeNoCheck(Operator):
+def volume_no_check():
     def __init__(self, volume_no_contraints: dict):
         self.logger = logging.getLogger("{}.{}".format(__name__, type(self).__name__))
         super().__init__()

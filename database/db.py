@@ -1,7 +1,103 @@
+import json
+from typing import Union, Any, List
+
+import numpy as np
+import pandas as pd
+import sqlalchemy
+from sqlalchemy.orm import sessionmaker, scoped_session
+
 from database.db_interface import DBInterface
+from database.db_models import Base, NiftiImage, NiftiStructure, Omic
 
 
 class DB(DBInterface):
+    def __init__(self, database_url=None):
+        if not database_url:
+            database_url = f'sqlite://'  ## Make an in memory DB
+
+        engine = sqlalchemy.create_engine(database_url, future=True)
+        Base.metadata.create_all(engine)
+
+        session_maker = sessionmaker(bind=engine, expire_on_commit=False)
+        self.Session = scoped_session(session_factory=session_maker)
+
+    def get_nifti_images(self) -> List[NiftiImage]:
+        with self.Session() as session:
+            return session.query(NiftiImage).all()
+
+    def get_nifti_image_by_kwargs(self, kwargs) -> NiftiImage:
+        with self.Session() as session:
+            return session.query(NiftiImage).filter_by(**kwargs).first()
+
+    def get_nifti_structures(self) -> List[NiftiStructure]:
+        with self.Session() as session:
+            return session.query(NiftiStructure).all()
+
+    def get_nifti_structures_by_kwargs(self, kwargs) -> NiftiStructure:
+        with self.Session() as session:
+            return session.query(NiftiStructure).filter_by(**kwargs).all()
+
+    def add_nifti_image(self,
+                        path) -> NiftiImage:
+        img = NiftiImage(path=path)
+        return self.add_generic(img)
+
+    def add_nifti_structure(self,
+                            path: str,
+                            name: str,
+                            nifti_image_id: int,
+                            label_int: Union[int, None] = None) -> NiftiStructure:
+        struct = NiftiStructure(path=path,
+                                name=name,
+                                nifti_image_id=nifti_image_id,
+                                label_int=label_int)
+        return self.add_generic(struct)
+
+    def add_omic(self,
+                 nifti_structure_id: int,
+                 name: str,
+                 value: Any,
+                 omic_package: str) -> Omic:
+
+        assert type(value) in [int, float, str, np.ndarray, tuple, list]
+
+        if isinstance(value, np.ndarray):
+            value = list([int(i) for i in value])
+
+        try:  # Check if json serializable
+            value = json.dumps(value)
+        except TypeError as e:
+            print(f"{value}: {e}")
+            raise e
+
+        o = Omic(name=name,
+                 nifti_structure_id=nifti_structure_id,
+                 _value=value,
+                 omic_package=omic_package)
+
+        return self.add_generic(o)
+
+    def add_generic(self, obj):
+        with self.Session() as session:
+            session.add(obj)
+            session.commit()
+            session.refresh(obj)
+            return obj
+
+    def generate_omics_report(self):
+        structures = self.get_nifti_structures()
+        d = {}
+        for structure in structures:
+            d[structure.id] = {
+                "image_path": structure.nifti_image.path,
+                "structure_path": structure.path,
+                "structure_name": structure.name
+            }
+            for omic in structure.omics:
+                d[omic.name] = omic.value
+        return pd.DataFrame
+
+
     def get_label_names(self):
         return {"image",
                 "brain",
