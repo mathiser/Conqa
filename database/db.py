@@ -1,25 +1,43 @@
+import datetime
 import json
 from typing import Union, Any, List
 
 import numpy as np
-import pandas as pd
 import sqlalchemy
 from sqlalchemy.orm import sessionmaker, scoped_session
 
 from database.db_interface import DBInterface
-from database.db_models import Base, NiftiImage, NiftiStructure, Omic
+from database.db_models import Base, NiftiImage, NiftiStructure, Omic, StructureBaseName, StructureSynonymName, \
+    StructureBaseNameAssociation
 
 
 class DB(DBInterface):
-    def __init__(self, database_url=None):
-        if not database_url:
-            database_url = f'sqlite://'  ## Make an in memory DB
+    def __init__(self, database_path=None, default_base_names_json=True):
+        if database_path:
+            self.database_path = f'sqlite:///' + database_path
+        else:
+            self.database_path = f'sqlite://'  # Make an in memory DB
 
-        engine = sqlalchemy.create_engine(database_url, future=True)
+        engine = sqlalchemy.create_engine(self.database_path, future=True)
         Base.metadata.create_all(engine)
 
         session_maker = sessionmaker(bind=engine, expire_on_commit=False)
         self.Session = scoped_session(session_factory=session_maker)
+
+        if isinstance(default_base_names_json, str):
+            self.load_default_base_names(default_base_names_json)
+        elif isinstance(default_base_names_json, bool):
+            if default_base_names_json:
+                self.load_default_base_names("resources/default_base_names.json")
+
+    def load_default_base_names(self, default_base_names_json):
+        with open(default_base_names_json, "r") as r:
+            base_names = json.loads(r.read())
+        for base_name in base_names:
+            try:
+                self.add_structure_base_name(base_name)
+            except Exception as e:
+                print(e)
 
     def get_nifti_images(self) -> List[NiftiImage]:
         with self.Session() as session:
@@ -38,8 +56,12 @@ class DB(DBInterface):
             return session.query(NiftiStructure).filter_by(**kwargs).all()
 
     def add_nifti_image(self,
-                        path) -> NiftiImage:
-        img = NiftiImage(path=path)
+                        path: str,
+                        scan_date: Union[datetime.datetime, None] = None,
+                        patient_id: Union[str, None] = None) -> NiftiImage:
+        img = NiftiImage(path=path,
+                         scan_date=scan_date,
+                         patient_id=patient_id)
         return self.add_generic(img)
 
     def add_nifti_structure(self,
@@ -47,11 +69,16 @@ class DB(DBInterface):
                             name: str,
                             nifti_image_id: int,
                             label_int: Union[int, None] = None) -> NiftiStructure:
+
         struct = NiftiStructure(path=path,
                                 name=name,
                                 nifti_image_id=nifti_image_id,
                                 label_int=label_int)
-        return self.add_generic(struct)
+        struct = self.add_generic(struct)
+
+        self.try_add_structure_base_name_association(struct)
+
+        return struct
 
     def add_omic(self,
                  nifti_structure_id: int,
@@ -59,10 +86,15 @@ class DB(DBInterface):
                  value: Any,
                  omic_package: str) -> Omic:
 
-        assert type(value) in [int, float, str, np.ndarray, tuple, list]
-
         if isinstance(value, np.ndarray):
-            value = list([int(i) for i in value])
+            if value.shape == ():
+                value = ""
+            else:
+                try:
+                    value = list([float(i) for i in value])
+                except Exception as e:
+                    print(type(value), value)
+                    print(e)
 
         try:  # Check if json serializable
             value = json.dumps(value)
@@ -84,83 +116,51 @@ class DB(DBInterface):
             session.refresh(obj)
             return obj
 
-    def generate_omics_report(self):
-        structures = self.get_nifti_structures()
-        d = {}
-        for structure in structures:
-            d[structure.id] = {
-                "image_path": structure.nifti_image.path,
-                "structure_path": structure.path,
-                "structure_name": structure.name
-            }
-            for omic in structure.omics:
-                d[omic.name] = omic.value
-        return pd.DataFrame
+    def get_structure_base_names(self):
+        with self.Session() as session:
+            return session.query(StructureBaseName).all()
 
+    def get_structure_synonym_names(self):
+        with self.Session() as session:
+            return session.query(StructureSynonymName).all()
 
-    def get_label_names(self):
-        return {"image",
-                "brain",
-                "brainstem",
-                "mandible",
-                "parotid_l",
-                "parotid_r",
-                "submandibular_l",
-                "submandibular_r",
-                "pcm_up",
-                "pcm_mid",
-                "pcm_low",
-                "thyroid"
-                "spinalcord"
-                "esophagus"
-                }
+    def add_structure_synonym_name(self,
+                                   structure_base_name_id: id,
+                                   name: str):
+        with self.Session() as session:
+            if not session.query(StructureSynonymName).filter_by(name=name).first():
+                sn = StructureSynonymName(structure_base_name_id=structure_base_name_id,
+                                          name=name)
 
-    def get_synonym_dictionary(self):
-        return {
-            "CT.nii.gz": "image",
-            "Brain.nii.gz": "brain",
-            "Brainstem.nii.gz": "brainstem",
-            "SpinalCord.nii.gz": "spinalcord",
-            "Mandible.nii.gz": "mandible",
-            "Parotid_L.nii.gz": "parotid_l",
-            "Parotid_R.nii.gz": "parotid_r",
-            "Submandibular_L.nii.gz": "submandibular_l",
-            "Submandibular_R.nii.gz": "submandibular_r",
-            "PCM_Up.nii.gz": "pcm_up",
-            "PCM_Mid.nii.gz": "pcm_mid",
-            "PCM_Low.nii.gz": "pcm_low",
-            "Thyroid.nii.gz": "thyroid",
-            "Esophagus.nii.gz": "esophagus"
-        }
+                return self.add_generic(sn)
 
-    def get_volume_number_constraint(self):
-        return {
-            "brain": 1,
-            "brainstem": 1,
-            "spinalcord": 1,
-            "mandible": 1,
-            "parotid_l": 1,
-            "parotid_r": 1,
-            "submandibular_l": 1,
-            "submandibular_r": 1,
-            "pcm_up": 1,
-            "pcm_mid": 1,
-            "pcm_low": 1,
-            "thyroid": 2,
-            "esophagus": 1
-        }
+    def add_structure_base_name(self, name: str):
+        with self.Session() as session:
+            if not session.query(StructureBaseName).filter_by(name=name).first():
+                bn = StructureBaseName(name=name)
+                bn = self.add_generic(bn)
+            else:
+                return None
+            if not session.query(StructureSynonymName).filter_by(name=name).first():
 
-    def get_adjacency_constraint(self):
-        return [
-            ("esophagus", "pcm_low"),
-            ("pcm_low", "pcm_mid"),
-            ("pcm_mid", "pcm_up"),
-            ("spinalcord", "brainstem"),
-            ("larynx_g", "larynx_sg")
-        ]
+                sn = StructureSynonymName(structure_base_name_id=bn.id,
+                                          name=name)
+                sn = self.add_generic(sn)
+        return bn
 
-    def get_paired_structures(self):
-        return [
-            ("parotid_r", "parotid_l"),
-            ("submandibular_r", "submandibular_l")
-        ]
+    def add_structure_base_name_association(self,
+                                            structure_base_name_id: int,
+                                            nifti_structure_id: int):
+        with self.Session() as session:
+            if not session.query(StructureBaseNameAssociation).filter_by(nifti_structure_id=nifti_structure_id).first():
+                bn = StructureBaseNameAssociation(structure_base_name_id=structure_base_name_id,
+                                                  nifti_structure_id=nifti_structure_id)
+                return self.add_generic(bn)
+
+    def try_add_structure_base_name_association(self, structure: NiftiStructure):
+        synonyms = self.get_structure_synonym_names()
+        for synonym in synonyms:
+            # Match synonym directly
+            if structure.name == synonym.name:
+                return self.add_structure_base_name_association(nifti_structure_id=structure.id,
+                                                                structure_base_name_id=synonym.structure_base_name_id)

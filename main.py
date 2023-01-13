@@ -1,19 +1,11 @@
-from queue import Queue
+import logging
+import sys
 
-from database.db import DB
-from io_tools.load import load_patient_folder
+from conqa.client import Conqa
 
-
-class ConQA:
-    def __init__(self, input_folder: str):
-        self.db = DB()  # DB Mock
-        self.reports_queue = Queue()
-        load_patient_folder(self.db, input_folder)
-        print(self.db.get_nifti_images())
-        print(self.db.get_nifti_images()[0].nifti_structures[0].__dict__)
-
+logging.basicConfig(encoding='utf-8', level=logging.INFO)
+db_path = sys.argv[1]
 
 if __name__ == "__main__":
-    ConQA(input_folder="./input/")
-
+    conqa = Conqa(database_path=db_path, threads=8)
 

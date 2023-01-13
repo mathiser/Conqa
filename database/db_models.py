@@ -1,7 +1,8 @@
+import datetime
 import json
 
 import SimpleITK as sitk
-from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -13,6 +14,9 @@ class NiftiImage(Base):
     path = Column(String)
 
     nifti_structures = relationship("NiftiStructure", lazy="subquery", back_populates="nifti_image")
+
+    scan_date = Column(DateTime, default=datetime.datetime.now)
+    patient_id = Column(String, default="111111-1111")
 
     _image = None
     _array = None
@@ -32,9 +36,13 @@ class NiftiStructure(Base):
     __tablename__ = "nifti_structures"
 
     id = Column(Integer, unique=True, primary_key=True, autoincrement=True)
+
+    # Base name
+    _structure_base_name_association = relationship("StructureBaseNameAssociation", lazy="subquery", uselist=False)
+
     nifti_image_id = Column(Integer, ForeignKey('nifti_images.id'))
     nifti_image = relationship("NiftiImage", lazy="joined", back_populates="nifti_structures", uselist=False)
-    omics = relationship("Omic", lazy="joined", )
+    omics = relationship("Omic", lazy="joined")
 
     path = Column(String)
     name = Column(String)
@@ -54,6 +62,11 @@ class NiftiStructure(Base):
         return self._array
 
     @property
+    def structure_base_name(self):
+        if self._structure_base_name_association:
+            return self._structure_base_name_association.structure_base_name
+
+    @property
     def omic_features(self):
         return list([omic.name for omic in self.omics])
 
@@ -64,7 +77,6 @@ class NiftiStructure(Base):
 
 class Omic(Base):
     __tablename__ = "omics"
-
     id = Column(Integer, unique=True, primary_key=True, autoincrement=True)
     nifti_structure_id = Column(Integer, ForeignKey('nifti_structures.id'))
     name = Column(String)
@@ -74,3 +86,29 @@ class Omic(Base):
     @property
     def value(self):
         return json.loads(self._value)
+
+
+class StructureBaseName(Base):
+    __tablename__ = "structure_base_names"
+    id = Column(Integer, unique=True, primary_key=True, autoincrement=True)
+    name = Column(String, unique=True)
+    structure_synonym_names = relationship("StructureSynonymName", lazy="subquery",
+                                           back_populates="structure_base_name")
+
+
+class StructureSynonymName(Base):
+    __tablename__ = "structure_synonym_names"
+    id = Column(Integer, unique=True, primary_key=True, autoincrement=True)
+    structure_base_name_id = Column(Integer, ForeignKey("structure_base_names.id"))
+    structure_base_name = relationship("StructureBaseName", lazy="joined", back_populates="structure_synonym_names",
+                                       uselist=False)
+    name = Column(String, unique=True)
+
+
+class StructureBaseNameAssociation(Base):
+    __tablename__ = "structure_synonym_names_associations"
+    id = Column(Integer, unique=True, primary_key=True, autoincrement=True)
+    structure_base_name_id = Column(Integer, ForeignKey("structure_base_names.id"))
+    structure_base_name = relationship("StructureBaseName", lazy="subquery", uselist=False)
+
+    nifti_structure_id = Column(Integer, ForeignKey("nifti_structures.id"), unique=True)

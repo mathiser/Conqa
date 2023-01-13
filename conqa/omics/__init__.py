@@ -1,0 +1,1 @@
+from .omic_generator import OmicGenerator

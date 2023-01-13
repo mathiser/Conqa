@@ -1,3 +1,6 @@
+import logging
+from multiprocessing.pool import ThreadPool
+
 import numpy as np
 
 from database.db_models import NiftiStructure
@@ -27,3 +30,19 @@ def find_contour_z_boundaries(structure: NiftiStructure):
                         "value": str(contour_range[0]),
                         "omic_package": "z_boundaries"})
     return return_list
+
+
+def batch_find_contour_z_boundaries(db, structures_iterable, threads):
+    t = ThreadPool(threads)
+    try:
+        results = t.map(find_contour_z_boundaries, structures_iterable)
+        for result in results:
+            for feature in result:
+                omic = db.add_omic(**feature)
+                logging.info(f"Added omic: {omic.name} to nifti_structure: {omic.nifti_structure_id}")
+                yield omic
+    except Exception as e:
+        print(e)
+    finally:
+        t.close()
+        t.join()

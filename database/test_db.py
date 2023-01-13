@@ -1,3 +1,4 @@
+import logging
 import random
 import secrets
 import unittest
@@ -7,6 +8,7 @@ import numpy as np
 from database.db import DB
 from database.db_models import NiftiStructure
 
+logging.basicConfig(encoding='utf-8', level=logging.DEBUG)
 
 def get_dummy_nifti_image_kwargs():
     return {"path": "/some/path/to/an/image"}
@@ -138,11 +140,28 @@ class TestDB(unittest.TestCase):
         for omic in echo_structure.omics:
             self.assertIsInstance(omic.value, list)
 
-        with self.db.Session() as session:
-            for ns in session.query(NiftiStructure).all():
-                print(ns.nifti_image.path)
+    def test_load_default_base_names(self):
+        self.db = DB(database_path=None, default_base_names_json=True)
+        for i in self.db.get_structure_base_names():
+            self.assertIsNotNone(i)
 
+    def test_try_add_structure_base_name_association(self):
+        self.db = DB(database_path=None, default_base_names_json=False)
 
+        img = self.db.add_nifti_image("/some/path")
+        bn = self.db.add_structure_base_name("GTVt")
+        synonyms = ["gtvt", "gtv-t", "gtv_t", "GTV_t"]
+        for s in synonyms:
+            self.db.add_structure_synonym_name(bn.id, s)
+
+        for s in synonyms:
+            structure = self.db.add_nifti_structure(path="/some/path/",
+                                                    name=s,
+                                                    nifti_image_id=img.id)
+
+            structure = self.db.get_nifti_structures_by_kwargs({"id": structure.id})[0]
+            print(structure.__dict__)
+            self.assertEqual("GTVt", structure.structure_base_name.name)
 
 if __name__ == '__main__':
     unittest.main()
